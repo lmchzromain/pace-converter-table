@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type TouchEvent } from 'react';
 import { buildPaceRows } from '../utils/pace';
 
 const rows = buildPaceRows();
@@ -12,18 +12,23 @@ const columns = [
   { key: 'durationMarathon', label: 'Marathon' }
 ] as const;
 
+const AXIS_LOCK_THRESHOLD = 5;
+const HORIZONTAL_DOMINANCE_RATIO = 1.08;
+const VERTICAL_DOMINANCE_RATIO = 1.55;
+const AXIS_FALLBACK_DISTANCE = 16;
+
 export const PaceConversionTable = () => {
   const [selectedPace, setSelectedPace] = useState<string | null>(null);
   const [scrollAxisLock, setScrollAxisLock] = useState<'x' | 'y' | null>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
-  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+  const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
     const touch = event.touches[0];
     touchStartRef.current = { x: touch.clientX, y: touch.clientY };
     setScrollAxisLock(null);
   };
 
-  const handleTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+  const handleTouchMove = (event: TouchEvent<HTMLDivElement>) => {
     if (scrollAxisLock || !touchStartRef.current) {
       return;
     }
@@ -33,11 +38,24 @@ export const PaceConversionTable = () => {
     const deltaY = Math.abs(touch.clientY - touchStartRef.current.y);
 
     // Wait for a minimum movement to avoid locking on tiny jitters.
-    if (Math.max(deltaX, deltaY) < 8) {
+    if (Math.max(deltaX, deltaY) < AXIS_LOCK_THRESHOLD) {
       return;
     }
 
-    setScrollAxisLock(deltaX > deltaY ? 'x' : 'y');
+    if (deltaX > deltaY * HORIZONTAL_DOMINANCE_RATIO) {
+      setScrollAxisLock('x');
+      return;
+    }
+
+    if (deltaY > deltaX * VERTICAL_DOMINANCE_RATIO) {
+      setScrollAxisLock('y');
+      return;
+    }
+
+    // If gesture remains diagonal, prefer horizontal to avoid unwanted vertical drift.
+    if (Math.max(deltaX, deltaY) >= AXIS_FALLBACK_DISTANCE) {
+      setScrollAxisLock('x');
+    }
   };
 
   const handleTouchEnd = () => {
@@ -46,24 +64,23 @@ export const PaceConversionTable = () => {
   };
 
   return (
-    <div className="h-screen overflow-y-auto overscroll-y-contain">
-      <div
-        className="overflow-x-auto overscroll-x-contain"
-        style={{
-          WebkitOverflowScrolling: 'touch',
-          touchAction:
-            scrollAxisLock === 'x'
-              ? 'pan-x'
-              : scrollAxisLock === 'y'
-                ? 'pan-y'
-                : 'pan-x pan-y'
-        }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
-      >
-        <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
+    <div
+      className="h-screen overflow-auto overscroll-contain"
+      style={{
+        WebkitOverflowScrolling: 'touch',
+        touchAction:
+          scrollAxisLock === 'x'
+            ? 'pan-x'
+            : scrollAxisLock === 'y'
+              ? 'pan-y'
+              : 'pan-x pan-y'
+      }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+    >
+      <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
             {columns.map((column, index) => {
@@ -122,8 +139,7 @@ export const PaceConversionTable = () => {
             );
           })}
         </tbody>
-        </table>
-      </div>
+      </table>
     </div>
   );
 };
