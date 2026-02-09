@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { buildPaceRows } from '../utils/pace';
 
 const rows = buildPaceRows();
@@ -14,10 +14,56 @@ const columns = [
 
 export const PaceConversionTable = () => {
   const [selectedPace, setSelectedPace] = useState<string | null>(null);
+  const [scrollAxisLock, setScrollAxisLock] = useState<'x' | 'y' | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    setScrollAxisLock(null);
+  };
+
+  const handleTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (scrollAxisLock || !touchStartRef.current) {
+      return;
+    }
+
+    const touch = event.touches[0];
+    const deltaX = Math.abs(touch.clientX - touchStartRef.current.x);
+    const deltaY = Math.abs(touch.clientY - touchStartRef.current.y);
+
+    // Wait for a minimum movement to avoid locking on tiny jitters.
+    if (Math.max(deltaX, deltaY) < 8) {
+      return;
+    }
+
+    setScrollAxisLock(deltaX > deltaY ? 'x' : 'y');
+  };
+
+  const handleTouchEnd = () => {
+    touchStartRef.current = null;
+    setScrollAxisLock(null);
+  };
 
   return (
-    <div className="h-screen overflow-auto overscroll-contain">
-      <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
+    <div className="h-screen overflow-y-auto overscroll-y-contain">
+      <div
+        className="overflow-x-auto overscroll-x-contain"
+        style={{
+          WebkitOverflowScrolling: 'touch',
+          touchAction:
+            scrollAxisLock === 'x'
+              ? 'pan-x'
+              : scrollAxisLock === 'y'
+                ? 'pan-y'
+                : 'pan-x pan-y'
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+      >
+        <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
             {columns.map((column, index) => {
@@ -76,7 +122,8 @@ export const PaceConversionTable = () => {
             );
           })}
         </tbody>
-      </table>
+        </table>
+      </div>
     </div>
   );
 };
